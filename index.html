@@ -41,6 +41,8 @@ h2{margin:0;font-size:19px}h3{margin:0 0 8px;font-size:16px}
 .chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
 .chip{display:inline-flex;align-items:center;gap:6px;background:var(--chip);border:0;border-radius:999px;padding:7px 13px;font-size:13px;cursor:pointer;white-space:nowrap}
 .chip.on{background:var(--green);color:#fff}
+.lchips{margin-top:12px;flex-wrap:wrap}.chip small{opacity:.75;font-size:12px}.chip.add{background:none;border:1px dashed var(--line)}
+.lacts{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--kc)}
 .tag{font-size:11.5px;padding:3px 8px;border-radius:7px;background:var(--chip);white-space:nowrap}
 .tag.order{background:var(--okbg);color:var(--accent);font-weight:600}.tag.now{background:var(--warnbg);color:var(--red);font-weight:600}
@@ -188,16 +190,16 @@ const KV=(()=>{let dbp=null;const open=()=>dbp||(dbp=new Promise((res,rej)=>{try
  return{async get(k){try{const db=await open();return await new Promise((res,rej)=>{const q=db.transaction('kv').objectStore('kv').get(k);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})}catch{return ls.get(k)}},
  async set(k,v){try{const db=await open();await new Promise((res,rej)=>{const t=db.transaction('kv','readwrite');t.objectStore('kv').put(v,k);t.oncomplete=res;t.onerror=()=>rej(t.error)})}catch{ls.set(k,v)}}}})();
 
-const newItem=p=>Object.assign({id:uid(),kid:'',ref:'',name:'',url:'',asin:'',img:'',price:'',store:'',type:'gift',status:'idea',orderOn:'',saleNote:'',eta:'',note:'',created:Date.now()},p||{});
+const newItem=p=>Object.assign({id:uid(),kid:'',list:'',ref:'',name:'',url:'',asin:'',img:'',price:'',store:'',type:'gift',status:'idea',orderOn:'',saleNote:'',eta:'',note:'',created:Date.now()},p||{});
 function defState(){const Y=new Date().getMonth()===0?new Date().getFullYear()-1:new Date().getFullYear();
- return{v:2,settings:{year:Y,arriveBy:Y+'-12-20',shipDays:5,title:'Planner',autoLock:true,lastBackup:null,dirty:false},
+ return{v:2,settings:{year:Y,arriveBy:Y+'-12-20',shipDays:5,title:'Planner',autoLock:true,lastBackup:null,dirty:false,sel:{}},
  kids:[{id:'k1',name:'Kid 1',age:'',color:'#2e6fb4',budget:'',activities:''},{id:'k2',name:'Kid 2',age:'',color:'#b0447e',budget:'',activities:''}],
- items:[],ideas:[]}}
+ lists:[],items:[],ideas:[]}}
 function fromV1(o){const d=defState();if(!o)return d;d.kids=(o.kids||d.kids).map(k=>({id:k.id,name:k.name,age:k.age,color:k.color,budget:+((k.budget||{}).total)||'',activities:(k.activities||[]).join(', ')}));
  const st={idea:'idea',list:'idea',bought:'ordered',shipped:'ordered',arrived:'here',wrapped:'wrapped',staged:'wrapped'};
  d.items=(o.items||[]).map(i=>newItem({id:i.id,kid:i.kid,name:i.name,url:i.url,asin:i.asin,img:i.img,price:i.paid||i.est||'',store:i.retailer||'',type:i.cat||'gift',status:st[i.status]||'idea',eta:i.eta||'',note:i.notes||''}));
  if(o.settings){d.settings.lastBackup=o.settings.lastBackup||null;d.settings.title=o.settings.title||'Planner'}return d}
-function migrate(d){const def=defState();d.settings=Object.assign(def.settings,d.settings||{});d.kids=d.kids&&d.kids.length?d.kids:def.kids;d.items=(d.items||[]).map(i=>Object.assign(newItem(),i));d.ideas=d.ideas||def.ideas;return d}
+function migrate(d){const def=defState();d.settings=Object.assign(def.settings,d.settings||{});d.kids=d.kids&&d.kids.length?d.kids:def.kids;d.items=(d.items||[]).map(i=>Object.assign(newItem(),i));d.ideas=d.ideas||def.ideas;d.lists=Array.isArray(d.lists)?d.lists:[];d.settings.sel=d.settings.sel&&typeof d.settings.sel==='object'?d.settings.sel:{};return d}
 
 let S=null,L=null,unlocked=false,pendingImport=null;
 const U={tab:'lists',kid:'all',f:'all',bio:false};
@@ -208,6 +210,15 @@ async function flush(){clearTimeout(saveT);if(S)try{await KV.set('state2',S)}cat
 /* ---------- gift math ---------- */
 const kidOf=id=>S.kids.find(k=>k.id===id);
 const kidByName=n=>{n=String(n||'').trim().toLowerCase();return n?S.kids.find(k=>k.name.toLowerCase()===n||k.name.toLowerCase().startsWith(n)):null};
+/* named lists: an item with no list is on the kid's Main list */
+const MAIN='Main list';
+const listOf=id=>S.lists.find(l=>l.id===id);
+const listsOf=kid=>S.lists.filter(l=>l.kid===kid);
+const listName=lid=>lid?((listOf(lid)||{}).name||MAIN):MAIN;
+const selList=kid=>{const v=S.settings.sel[kid]||'';return v&&listOf(v)?v:''};
+const inList=(i,lid)=>(i.list||'')===lid;
+const active=i=>inList(i,selList(i.kid));
+function listByName(kid,name,make){name=String(name||'').trim();if(!name||/^main( list)?$/i.test(name))return '';let l=S.lists.find(x=>x.kid===kid&&x.name.toLowerCase()===name.toLowerCase());if(!l&&make){l={id:uid(),kid,name};S.lists.push(l)}return l?l.id:''}
 const asinOf=u=>{const m=String(u||'').match(/(?:\/dp\/|\/gp\/product\/|\/gp\/aw\/d\/|[?&]asin=)([A-Z0-9]{10})/i);return m?m[1].toUpperCase():''};
 const storeOf=u=>{try{const h=new URL(u).hostname.replace(/^www\./,'');if(/amazon|amzn|a\.co/.test(h))return 'Amazon';const p=h.split('.');return p[p.length-2].replace(/^./,c=>c.toUpperCase())}catch{return ''}};
 const amzImg=a=>`https://m.media-amazon.com/images/P/${a}.01._SCLZZZZZZZ_SX400_.jpg`;
@@ -227,7 +238,7 @@ function sugg(i){const t=today(),s=SALES(),last=lastSafe();
  if(d<t){d=t;why=t>last&&!dig?'Past the safe shipping day — fast shipping or buy in store':'Sale already started — order now'}
  else if(!dig&&d>last){d=last;why='Last safe day to order for delivery by '+fdD(arrive())}
  return{d,why,set:false}}
-function totals(k){const its=S.items.filter(i=>i.kid===k.id);const all=its.reduce((s,i)=>s+(+i.price||0),0),ord=its.filter(i=>i.status!=='idea').reduce((s,i)=>s+(+i.price||0),0);return{all,ord,n:its.length,no:its.filter(i=>i.status!=='idea').length}}
+function totals(k,lid){if(lid===undefined)lid=selList(k.id);const its=S.items.filter(i=>i.kid===k.id&&inList(i,lid));const all=its.reduce((s,i)=>s+(+i.price||0),0),ord=its.filter(i=>i.status!=='idea').reduce((s,i)=>s+(+i.price||0),0);return{all,ord,n:its.length,no:its.filter(i=>i.status!=='idea').length}}
 
 /* ---------- Claude hand-off ---------- */
 const FMT_ITEMS='{"planner":1,"items":[{"kid":"","name":"","price":0,"store":"","url":"","img":"","status":"idea or ordered","orderOn":"YYYY-MM-DD","saleNote":"","eta":"YYYY-MM-DD","type":"big, gift or stocking"}]}';
@@ -236,7 +247,7 @@ const kidNames=()=>S.kids.map(k=>k.name).join(', ');
 function pShot(){return `Add to my gift Planner. I'm attaching a screenshot of a gift — a product page or an order confirmation. Read every item and reply with ONE JSON code block I can paste into the Planner, in exactly this format:\n${FMT_ITEMS}\nKids: ${kidNames()}. Leave "kid" blank if you can't tell — the app will ask me.\nOrder confirmation → status "ordered", eta = delivery date, price = what I paid.\nProduct page → status "idea"; search for upcoming sales and set orderOn to the best day to order so it still arrives by ${fdD(arrive())} (Amazon Black Friday Week is Nov 19–30), with a short saleNote saying why. Include the product URL if you can find it.`}
 function pIdeas(k){const on=S.items.filter(i=>i.kid===k.id).map(i=>i.name).join('; ')||'nothing yet';
  return `Give me Christmas gift ideas for ${k.name}, age ${k.age}. What ${k.name} is into right now: ${k.activities||'(ask me first)'}. Already on the list: ${on}.\nRules: support what they already do — no brand-new hobbies. We're short on storage space, so favor consumables, experiences, upgrades that replace something old, and small items. Include some stocking stuffers. Search for real, current products and prices.\nReply with ONE JSON code block in this format:\n{"planner":1,"ideas":[{"kid":"${k.name}","name":"","type":"big, gift or stocking","why":"one short line","search":"words to search Amazon for","price":0,"url":""}]}`}
-function pSales(){const its=S.items.filter(i=>i.status==='idea');
+function pSales(){const its=S.items.filter(i=>i.status==='idea'&&active(i));
  return `Check sales for my Christmas list. For each item, search for current and upcoming sales (Amazon Black Friday Week runs Nov 19–30, Black Friday is Nov 27, Cyber Monday Nov 30) and pick the best day to order so it arrives by ${fdD(arrive())}. Update prices if they've changed.\nReply with ONE JSON code block:\n{"planner":1,"items":[{"id":"","orderOn":"YYYY-MM-DD","saleNote":"why this day","price":0}]}\nItems (id | name | price | link):\n`+its.map(i=>`${i.id} | ${i.name} | ${i.price||'?'} | ${i.url||'-'}`).join('\n')}
 
 /* ---------- import from Claude ---------- */
@@ -249,11 +260,18 @@ function cleanIn(r){const o={};['name','url','img','store','orderOn','saleNote',
 function chooseKid(what){return modal(`<p>Who is <b>${esc(what)}</b> for?</p><div class="kidpick">${S.kids.map(k=>`<button class="btn" style="background:${esc(k.color)}" data-m="${k.id}">${esc(k.name)}</button>`).join('')}<button class="btn ghost" data-m="cancel">Skip it</button></div>`).then(v=>v&&v!=='cancel'&&v!=='ok'?kidOf(v):null)}
 async function applyImport(o){let add=0,upd=0,idn=0,kn=0;
  (o.kids||[]).forEach((r,x)=>{if(!r||!r.name)return;let k=kidByName(r.name)||(r.slot&&S.kids[r.slot-1])||null;if(!k){k={id:uid(),name:'',age:'',color:['#2e6fb4','#b0447e','#2f7a52','#c27c0e'][S.kids.length%4],budget:'',activities:''};S.kids.push(k)}k.name=String(r.name);if(r.age!=null)k.age=r.age;if(r.activities!=null)k.activities=String(r.activities);if(r.color)k.color=r.color;kn++});
- for(const r of o.items||[]){const c=cleanIn(r);const ex=(r.id&&S.items.find(x=>x.id===r.id))||(c.ref&&S.items.find(x=>x.ref&&x.ref===c.ref))||(c.url&&S.items.find(x=>x.url&&x.url===c.url));
-  if(ex){Object.assign(ex,c);const k=kidByName(r.kid);if(k)ex.kid=k.id;upd++;continue}
-  if(!c.name)continue;const k=kidByName(r.kid)||await chooseKid(c.name);if(!k)continue;S.items.push(newItem(Object.assign(c,{kid:k.id})));add++}
+ const touched=new Map();
+ for(const r of o.items||[]){const c=cleanIn(r),ln=String((r.list!=null&&r.list!=='')?r.list:(o.list||'')).trim();
+  let ex=r.id&&S.items.find(x=>x.id===r.id),k=kidByName(r.kid);
+  if(!ex&&ln){if(!k&&c.name)k=await chooseKid(c.name);if(!k)continue;c.list=listByName(k.id,ln,true);touched.set(k.id,c.list);
+   const pool=S.items.filter(x=>x.kid===k.id&&inList(x,c.list));ex=(c.ref&&pool.find(x=>x.ref===c.ref))||(c.url&&pool.find(x=>x.url===c.url))}
+  else if(!ex){ex=(c.ref&&S.items.find(x=>x.ref&&x.ref===c.ref))||(c.url&&S.items.find(x=>x.url&&x.url===c.url))}
+  else if(ln){const kk=k||kidOf(ex.kid);if(kk){c.list=listByName(kk.id,ln,true);touched.set(kk.id,c.list)}}
+  if(ex){Object.assign(ex,c);if(k)ex.kid=k.id;upd++;continue}
+  if(!c.name)continue;if(!k)k=await chooseKid(c.name);if(!k)continue;S.items.push(newItem(Object.assign({list:selList(k.id)},c,{kid:k.id})));add++}
+ touched.forEach((l,kid)=>S.settings.sel[kid]=l);
  for(const r of o.ideas||[]){if(!r.name||S.ideas.some(x=>x.name===r.name&&(kidByName(r.kid)||{}).id===x.kid))continue;const k=kidByName(r.kid)||await chooseKid(r.name);if(!k)continue;S.ideas.unshift({id:uid(),kid:k.id,name:String(r.name),type:TYPES[r.type]?r.type:'gift',why:String(r.why||''),search:String(r.search||r.name),price:+r.price||'',url:String(r.url||''),hidden:false,fromClaude:true});idn++}
- save();render();toast([kn&&plural(kn,'kid')+' set up',add&&plural(add,'gift')+' added',upd&&plural(upd,'gift')+' updated',idn&&plural(idn,'idea')+' added'].filter(Boolean).join(' · ')||'Nothing new in that code')}
+ save();render();toast([kn&&plural(kn,'kid')+' set up',add&&plural(add,'gift')+' added',upd&&plural(upd,'gift')+' updated',idn&&plural(idn,'idea')+' added',touched.size&&'on '+[...new Set(touched.values())].map(listName).join(', ')].filter(Boolean).join(' · ')||'Nothing new in that code')}
 async function pasteFlow(){const v=await modal(`<p><b>Paste from Claude</b><br><span class="muted sm">Copy Claude’s code block, then paste it here.</span></p><textarea id="pasteBox" placeholder='{"planner":1, …}'></textarea><div class="row wrap"><button class="btn ghost sm" data-m="clip">Paste from clipboard</button></div><div class="row end"><button data-m="cancel" class="btn ghost sm">Cancel</button><button data-m="ok" class="btn sm">Add it</button></div>`,true);
  if(v===null)return;const o=parseImport(v);if(!o)return toast('That doesn’t look like a Planner code');await applyImport(o)}
 
@@ -272,11 +290,15 @@ function vLists(){const st=S.settings,kids=S.kids.filter(k=>U.kid==='all'||k.id=
  const needBk=S.items.length&&(!st.lastBackup||(st.dirty&&dd(pd(st.lastBackup),today())>=7));
  let h=kidChips()+(needBk?`<div class="banner"><span>💾 ${st.lastBackup?'No backup in a week':'No backup yet'} — one tap keeps the list safe.</span><button class="btn sm" data-act="share">Back up</button></div>`:'')+
  `<div class="chips" style="margin-top:10px">${[['all','All'],['todo','To order'],['ordered','Ordered'],['wrapped','Wrapped']].map(([v,l])=>`<button class="chip ${U.f===v?'on':''}" data-act="f" data-v="${v}">${l}</button>`).join('')}</div>`;
- kids.forEach(k=>{const t=totals(k),b=+k.budget,its=S.items.filter(i=>i.kid===k.id&&fl[U.f](i)).sort((a,c)=>(a.status==='idea'&&c.status==='idea')?sugg(a).d-sugg(c).d:0);
-  h+=`<section class="card" style="--kc:${esc(k.color)}"><div class="kidhead"><div><h2>${esc(k.name)}</h2><div class="muted sm">${plural(t.n,'gift')} · ${t.no} ordered</div></div><div class="tot"><b>${money(t.all)}</b><small>${money(t.ord)} ordered${b?' · budget '+money(b):''}</small></div></div>
+ kids.forEach(k=>{const lid=selList(k.id),ls=listsOf(k.id),t=totals(k,lid),b=+k.budget,its=S.items.filter(i=>i.kid===k.id&&inList(i,lid)&&fl[U.f](i)).sort((a,c)=>(a.status==='idea'&&c.status==='idea')?sugg(a).d-sugg(c).d:0);
+  h+=`<section class="card" style="--kc:${esc(k.color)}"><div class="kidhead"><div><h2>${esc(k.name)}</h2><div class="muted sm">${ls.length?esc(listName(lid))+' · ':''}${plural(t.n,'gift')} · ${t.no} ordered</div></div><div class="tot"><b>${money(t.all)}</b><small>${money(t.ord)} ordered${b?' · budget '+money(b):''}</small></div></div>
+  ${listChips(k,lid,ls)}
   ${b?`<div class="bud ${t.all>b?'over':''}"><i style="width:${Math.min(100,t.all/b*100)}%"></i></div>`:''}
-  ${its.map(card).join('')||`<div class="empty">${t.n?'Nothing here with this filter.':`Nothing on ${esc(k.name)}’s list yet.<br><button class="btn sm" style="margin-top:10px" data-tab="find">Find gifts & ideas</button>`}</div>`}</section>`});
+  ${its.map(card).join('')||`<div class="empty">${t.n?'Nothing here with this filter.':`Nothing on ${esc(k.name)}’s list yet.<br><button class="btn sm" style="margin-top:10px" data-tab="find">Find gifts & ideas</button>`}</div>`}${lid?`<div class="lacts"><button class="btn ghost sm" data-act="lren" data-k="${k.id}">Rename list</button><button class="btn danger sm" data-act="ldel" data-k="${k.id}">Delete this list</button></div>`:t.n?`<div class="lacts"><button class="btn ghost sm" data-act="lclr" data-k="${k.id}">Clear ${MAIN}</button></div>`:''}</section>`});
  return h}
+function listChips(k,lid,ls){const mainN=S.items.filter(i=>i.kid===k.id&&!i.list).length;
+ const c=(v,l)=>{const t=totals(k,v);return `<button class="chip ${lid===v?'on':''}" data-act="lsel" data-k="${k.id}" data-v="${v}">${esc(l)} <small>${money(t.all)}</small></button>`};
+ return `<div class="chips lchips">${(!ls.length||mainN||!lid)?c('',MAIN):''}${ls.map(l=>c(l.id,l.name)).join('')}<button class="chip add" data-act="lnew" data-k="${k.id}">+ New list</button></div>`}
 function vFind(){const kids=S.kids.filter(k=>U.kid==='all'||k.id===U.kid);
  let h=`<section class="card"><h3>Search the stores</h3><input id="q" type="search" placeholder="e.g. youth batting gloves" value="${esc(U.q||'')}" enterkeyhint="search">
  <div class="stores">${STORES.map((s,x)=>`<button class="btn ghost sm" data-act="search" data-i="${x}">${s[0]}</button>`).join('')}</div>
@@ -293,10 +315,10 @@ function vWhen(){const t=today(),s=SALES(),ev=[];
  const push=(d,kind,label,item)=>ev.push({d,kind,label,item});
  push(s.amzStart,'sale','Amazon Black Friday Week starts');push(s.bf,'sale','Black Friday');push(s.cm,'sale','Cyber Monday · Amazon sale ends');push(s.gm,'sale','Green Monday');
  push(lastSafe(),'dead','Last safe day to order');push(arrive(),'dead','Everything should be here');push(new Date(Y(),11,25),'dead','Christmas 🎄');
- S.items.forEach(i=>{if(i.status==='idea'){const g=sugg(i);push(g.d,'order',g.why,i)}else if(i.status==='ordered'&&i.eta)push(pd(i.eta),'arrive','Arrives',i)});
+ S.items.filter(active).forEach(i=>{if(i.status==='idea'){const g=sugg(i);push(g.d,'order',g.why,i)}else if(i.status==='ordered'&&i.eta)push(pd(i.eta),'arrive','Arrives',i)});
  ev.push({d:t,kind:'today',label:'Today'});
  const days=new Map();ev.sort((a,b)=>a.d-b.d||(a.kind==='today'?-1:1)).forEach(e=>{const key=iso(e.d);if(!days.has(key))days.set(key,{d:e.d,ev:[]});days.get(key).ev.push(e)});
- const noEta=S.items.filter(i=>i.status==='ordered'&&!i.eta);
+ const noEta=S.items.filter(i=>active(i)&&i.status==='ordered'&&!i.eta);
  let h=`<section class="card"><h3>When to order</h3><p class="muted sm" style="margin:0">Each gift gets a suggested order day from the sale calendar. For live prices and real sale dates on your exact items, have Claude check them.</p>
  <button class="btn claude wide" data-act="cSales">✨ Have Claude check sales on ${plural(S.items.filter(i=>i.status==='idea').length,'gift')}</button><button class="btn ghost wide" data-act="paste">Paste Claude’s answer</button></section>
  <section class="card"><div class="tl">`;
@@ -327,7 +349,7 @@ function vMore(){const st=S.settings;
  <section class="card"><button class="btn ghost sm" data-act="reseed">Bring back dismissed ideas</button> <button class="btn danger sm" data-act="reset">Erase everything</button></section>`}
 
 const VIEWS={lists:vLists,find:vFind,when:vWhen,more:vMore};
-function render(top){if(!unlocked)return;const n=dd(today(),new Date(Y(),11,25)),all=S.items.reduce((s,i)=>s+(+i.price||0),0);
+function render(top){if(!unlocked)return;const n=dd(today(),new Date(Y(),11,25)),all=S.items.filter(active).reduce((s,i)=>s+(+i.price||0),0);
  document.title=$('#ttl').textContent=S.settings.title||'Planner';$('#sub').textContent=`${money(all)} total · ${n>0?plural(n,'day')+' to go':'Merry Christmas'}`;
  $('#tabs').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.tab===U.tab));$('#fab').hidden=U.tab==='more';
  const y=window.scrollY;$('#view').innerHTML=VIEWS[U.tab]();window.scrollTo(0,top?0:y)}
@@ -337,7 +359,7 @@ let E=null;
 function sheetOpen(){const sh=$('#sheet');if(sh.hidden){try{history.pushState({sheet:1},'')}catch{}}sh.hidden=false;document.body.classList.add('noscroll')}
 function closeSheet(fromPop){const sh=$('#sheet');if(sh.hidden)return;sh.hidden=true;sh.innerHTML='';E=null;document.body.classList.remove('noscroll');if(!fromPop){try{if(history.state&&history.state.sheet)history.back()}catch{}}}
 window.addEventListener('popstate',()=>closeSheet(true));
-function openEditor(id,preset){const b=id?S.items.find(x=>x.id===id):null;E=b?JSON.parse(JSON.stringify(b)):newItem(Object.assign({kid:U.kid!=='all'?U.kid:S.kids[0].id},preset||{}));E._new=!b;drawEditor()}
+function openEditor(id,preset){const b=id?S.items.find(x=>x.id===id):null;const nk=U.kid!=='all'?U.kid:S.kids[0].id;E=b?JSON.parse(JSON.stringify(b)):newItem(Object.assign({kid:nk,list:selList(nk)},preset||{}));E._new=!b;drawEditor()}
 function drawEditor(){const i=E,body=$('#sheet .sbody'),sc=body?body.scrollTop:0,img=imgOf(i),g=sugg(i);
  const seg=(name,opts,val)=>`<div class="seg">${opts.map(([v,l])=>`<label><input type="radio" name="${name}" value="${esc(v)}" ${String(val)===String(v)?'checked':''}><span>${l}</span></label>`).join('')}</div>`;
  $('#sheet').innerHTML=`<div class="sh"><button class="btn ghost sm" data-act="close">Cancel</button><b>${i._new?'Add a gift':'Gift'}</b><button class="btn sm" data-act="save">Save</button></div><div class="sbody">
@@ -346,6 +368,7 @@ function drawEditor(){const i=E,body=$('#sheet .sbody'),sc=body?body.scrollTop:0
   <div class="pbtn"><label class="btn ghost sm" style="color:var(--ink)">📷 Photo<input type="file" id="imgFile" accept="image/*" hidden></label><button class="btn ghost sm" data-act="imgUrl">Image link</button>${i.img?'<button class="btn ghost sm" data-act="imgClr">Remove</button>':''}</div></div>
  <label>What is it?<input name="name" value="${esc(i.name)}" placeholder="Gift name"></label>
  <div class="lab">For</div>${seg('kid',S.kids.map(k=>[k.id,esc(k.name)]),i.kid)}
+ ${listsOf(i.kid).length?`<div class="lab">List</div>${seg('list',[['',MAIN]].concat(listsOf(i.kid).map(l=>[l.id,esc(l.name)])),i.list||'')}`:''}
  <div class="grid2"><label>Price<input name="price" type="number" inputmode="decimal" step="0.01" value="${esc(i.price)}" placeholder="0"></label><label>Store<input name="store" value="${esc(i.store)}"></label></div>
  <div class="lab">Type</div>${seg('type',Object.entries(TYPES).map(([v,o])=>[v,o.l]),i.type)}
  <div class="lab">Status</div>${seg('status',Object.entries(STATUS),i.status)}
@@ -361,8 +384,9 @@ function compress(file){return new Promise((res,rej)=>{const r=new FileReader();
 $('#sheet').addEventListener('input',e=>{const el=e.target;if(E&&el.name&&el.type!=='radio')E[el.name]=el.value});
 $('#sheet').addEventListener('change',async e=>{const el=e.target;if(el.id==='imgFile'&&el.files[0]){try{E.img=await compress(el.files[0]);drawEditor()}catch{toast('Could not read that image')}return}
  if(!E||!el.name)return;E[el.name]=el.value;
+ if(el.name==='kid'&&E.list&&(listOf(E.list)||{}).kid!==E.kid)E.list=selList(E.kid);
  if(el.name==='url'){E.asin=asinOf(el.value);if(!E.store)E.store=storeOf(el.value);if(/amzn\.to|a\.co\//.test(el.value))toast('Short Amazon link — open it and copy the full link for the photo')}
- if(['url','status','type','orderOn','eta'].includes(el.name))drawEditor()});
+ if(['url','status','type','orderOn','eta','kid'].includes(el.name))drawEditor()});
 
 /* ---------- modal ---------- */
 function modal(html,textMode){return new Promise(res=>{const m=$('#modal');m.innerHTML=`<div class="mbox">${html}</div>`;m.hidden=false;const inp=$('input,textarea',m);
@@ -389,9 +413,18 @@ document.addEventListener('click',async e=>{if(!unlocked)return;const el=e.targe
  case 'adv':{it.status=el.dataset.to;if(it.status==='ordered'){const d=await ask('Delivery date? (you can skip)','date',it.eta||'');if(d)it.eta=d;if(!+it.price){const p=await ask('What did you pay?','number');if(p)it.price=p}}save();render();toast(STATUS[it.status]+' ✓')}break;
  case 'kid':U.kid=el.dataset.v;render();break;
  case 'f':U.f=el.dataset.v;render();break;
+ case 'lsel':S.settings.sel[el.dataset.k]=el.dataset.v;save(true);render();break;
+ case 'lnew':{const k=kidOf(el.dataset.k),n=await ask('Name the new list for '+k.name+' (like Bat list)');if(!n||!n.trim())break;S.settings.sel[k.id]=listByName(k.id,n,true);save();render();toast(listName(S.settings.sel[k.id])+' ready — tap + to add gifts')}break;
+ case 'lren':{const lid=selList(el.dataset.k),l=listOf(lid);if(!l)break;const n=await ask('New name for this list','text',l.name);if(n&&n.trim()){l.name=n.trim();save();render()}}break;
+ case 'ldel':{const kid=el.dataset.k,lid=selList(kid),l=listOf(lid);if(!l)break;const n=S.items.filter(i=>i.kid===kid&&inList(i,lid)).length;
+  if(!(await confirmM(`Delete ${l.name}${n?' and its '+plural(n,'gift'):''}? Your other lists stay as they are.`)))break;
+  S.items=S.items.filter(i=>!(i.kid===kid&&inList(i,lid)));S.lists=S.lists.filter(x=>x.id!==lid);const nx=listsOf(kid)[0];S.settings.sel[kid]=nx?nx.id:'';save();render();toast(l.name+' deleted')}break;
+ case 'lclr':{const kid=el.dataset.k,n=S.items.filter(i=>i.kid===kid&&!i.list).length;if(!n)break;
+  if(!(await confirmM(`Clear ${MAIN}? This deletes its ${plural(n,'gift')}. Your other lists stay as they are.`)))break;
+  S.items=S.items.filter(i=>!(i.kid===kid&&!i.list));const nx=listsOf(kid)[0];if(nx)S.settings.sel[kid]=nx.id;save();render();toast(MAIN+' cleared')}break;
  case 'search':U.q=$('#q').value;doSearch(U.q,+el.dataset.i);break;
  case 'isearch':doSearch(idea.search||idea.name,+el.dataset.s);break;
- case 'iadd':S.items.push(newItem({kid:idea.kid,name:idea.name,type:idea.type,price:idea.price||'',url:idea.url||'',asin:asinOf(idea.url),store:storeOf(idea.url)}));save();render();toast('Added to '+kidOf(idea.kid).name+'’s list — tap it to add a link & price');break;
+ case 'iadd':S.items.push(newItem({kid:idea.kid,list:selList(idea.kid),name:idea.name,type:idea.type,price:idea.price||'',url:idea.url||'',asin:asinOf(idea.url),store:storeOf(idea.url)}));save();render();toast('Added to '+kidOf(idea.kid).name+'’s list — tap it to add a link & price');break;
  case 'ihide':idea.hidden=true;save();render();break;
  case 'reseed':S.ideas.forEach(x=>x.hidden=false);save();toast('Ideas restored');break;
  case 'cShot':toClaude(pShot());break;
