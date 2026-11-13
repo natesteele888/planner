@@ -1,6 +1,6 @@
 /* Planner: network first, so an update shows right away; the saved copy is only used with no signal.
    Only this site's own files are cached (never another site's answers). Bump the version if a change needs it. */
-const CACHE = "planner-v2";
+const CACHE = "planner-v3";
 const SHELL = ["./", "manifest.json", "icons/planner-192.png", "icons/planner-512.png"];
 self.addEventListener("install", e => {
   self.skipWaiting();

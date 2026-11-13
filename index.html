@@ -43,6 +43,7 @@ h2{margin:0;font-size:19px}h3{margin:0 0 8px;font-size:16px}
 .chip.on{background:var(--green);color:#fff}
 .lchips{margin-top:12px;flex-wrap:wrap}.chip small{opacity:.75;font-size:12px}.chip.add{background:none;border:1px dashed var(--line)}
 .lacts{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.split{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:13px;color:var(--mute)}.split b{color:var(--ink)}.tag.who{background:var(--bluebg);color:var(--blue)}
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--kc)}
 .tag{font-size:11.5px;padding:3px 8px;border-radius:7px;background:var(--chip);white-space:nowrap}
 .tag.order{background:var(--okbg);color:var(--accent);font-weight:600}.tag.now{background:var(--warnbg);color:var(--red);font-weight:600}
@@ -65,6 +66,8 @@ main{max-width:680px;margin:0 auto;padding:6px 14px calc(100px + env(safe-area-i
 .item:first-of-type{border-top:0}
 .thumb{position:relative;width:72px;height:72px;border-radius:12px;background:#fff;border:1px solid var(--line);display:grid;place-items:center;overflow:hidden;font-size:26px}
 .thumb img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#fff}
+.thumb[data-act=zoom]{cursor:zoom-in}
+.zoom{display:block;width:100%;max-height:60vh;object-fit:contain;background:#fff;border-radius:12px;margin:0 0 12px}
 .it{font-weight:600;line-height:1.25}
 .meta{display:flex;flex-wrap:wrap;gap:5px 8px;align-items:center;font-size:12.5px;color:var(--mute);margin-top:5px}
 .price{font-weight:700;color:var(--ink);font-size:14px}
@@ -190,7 +193,7 @@ const KV=(()=>{let dbp=null;const open=()=>dbp||(dbp=new Promise((res,rej)=>{try
  return{async get(k){try{const db=await open();return await new Promise((res,rej)=>{const q=db.transaction('kv').objectStore('kv').get(k);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})}catch{return ls.get(k)}},
  async set(k,v){try{const db=await open();await new Promise((res,rej)=>{const t=db.transaction('kv','readwrite');t.objectStore('kv').put(v,k);t.oncomplete=res;t.onerror=()=>rej(t.error)})}catch{ls.set(k,v)}}}})();
 
-const newItem=p=>Object.assign({id:uid(),kid:'',list:'',ref:'',name:'',url:'',asin:'',img:'',price:'',store:'',type:'gift',status:'idea',orderOn:'',saleNote:'',eta:'',note:'',created:Date.now()},p||{});
+const newItem=p=>Object.assign({id:uid(),kid:'',list:'',who:'',ref:'',name:'',url:'',asin:'',img:'',price:'',store:'',type:'gift',status:'idea',orderOn:'',saleNote:'',eta:'',note:'',created:Date.now()},p||{});
 function defState(){const Y=new Date().getMonth()===0?new Date().getFullYear()-1:new Date().getFullYear();
  return{v:2,settings:{year:Y,arriveBy:Y+'-12-20',shipDays:5,title:'Planner',autoLock:true,lastBackup:null,dirty:false,sel:{}},
  kids:[{id:'k1',name:'Kid 1',age:'',color:'#2e6fb4',budget:'',activities:''},{id:'k2',name:'Kid 2',age:'',color:'#b0447e',budget:'',activities:''}],
@@ -253,7 +256,7 @@ function pSales(){const its=S.items.filter(i=>i.status==='idea'&&active(i));
 /* ---------- import from Claude ---------- */
 function parseImport(txt){const s=String(txt||''),a=s.indexOf('{'),b=s.lastIndexOf('}');if(a<0||b<a)return null;try{const o=JSON.parse(s.slice(a,b+1));return(o.items||o.ideas||o.kids)?o:null}catch{return null}}
 const ST_IN={idea:'idea',ordered:'ordered',bought:'ordered',purchased:'ordered',shipped:'ordered',here:'here',arrived:'here',delivered:'here',wrapped:'wrapped'};
-function cleanIn(r){const o={};['name','url','img','store','orderOn','saleNote','eta','note','ref'].forEach(f=>{if(r[f]!=null&&r[f]!=='')o[f]=String(r[f])});
+function cleanIn(r){if(r&&r.image&&!r.img)r=Object.assign({},r,{img:r.image});const o={};['name','url','img','store','orderOn','saleNote','eta','note','ref','who'].forEach(f=>{if(r[f]!=null&&r[f]!=='')o[f]=String(r[f])});
  if(r.price!=null&&r.price!==''&&+r.price)o.price=String(+r.price);if(TYPES[r.type])o.type=r.type;if(r.status&&ST_IN[String(r.status).toLowerCase()])o.status=ST_IN[String(r.status).toLowerCase()];
  if(o.orderOn&&!/^\d{4}-\d\d-\d\d$/.test(o.orderOn))delete o.orderOn;if(o.eta&&!/^\d{4}-\d\d-\d\d$/.test(o.eta))delete o.eta;
  if(o.url){o.asin=asinOf(o.url);if(!o.store)o.store=storeOf(o.url)}return o}
@@ -279,11 +282,11 @@ async function pasteFlow(){const v=await modal(`<p><b>Paste from Claude</b><br><
 function orderTag(i){if(i.status!=='idea')return '';const s=sugg(i),n=dd(today(),s.d);return `<span class="tag ${n<=0?'now':'order'}">${n<=0?'Order today':'Order '+fdD(s.d)}</span>`}
 function etaTag(i){if(i.status!=='ordered')return '';if(!i.eta)return '<span class="tag">No delivery date</span>';const late=pd(i.eta)>arrive();return `<span class="tag ${late?'now':''}">${late?'⚠ ':''}Arrives ${fdD(pd(i.eta))}</span>`}
 function card(i){const k=kidOf(i.kid),img=imgOf(i),nx=NEXT[i.status];
- return `<div class="item" data-act="edit" data-id="${i.id}"><div class="thumb"><span>${TYPES[i.type].i}</span>${img?`<img src="${esc(img)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`:''}</div>
+ return `<div class="item" data-act="edit" data-id="${i.id}"><div class="thumb"${img?` data-act="zoom" data-id="${i.id}" title="See the photo"`:''}><span>${TYPES[i.type].i}</span>${img?`<img src="${esc(img)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`:''}</div>
  <div><div class="it">${esc(i.name||'Untitled')}</div>
  <div class="meta">${+i.price?`<span class="price">${money(i.price)}</span>`:'<span>no price</span>'}${i.store?`<span>${esc(i.store)}</span>`:''}${U.kid==='all'&&k?`<span><span class="dot" style="--kc:${esc(k.color)}"></span> ${esc(k.name)}</span>`:''}<span>${TYPES[i.type].l}</span></div>
- <div class="meta"><span class="tag s-${i.status}">${STATUS[i.status]}</span>${orderTag(i)}${etaTag(i)}</div>
- <div class="acts">${i.url?`<a class="btn ghost sm" href="${esc(i.url)}" target="_blank" rel="noopener noreferrer">Open ↗</a>`:''}${nx?`<button class="btn sm" data-act="adv" data-id="${i.id}" data-to="${nx[0]}">${nx[1]}</button>`:''}</div></div></div>`}
+ <div class="meta"><span class="tag s-${i.status}">${STATUS[i.status]}</span>${i.who?`<span class="tag who">${esc(i.who)} gets it</span>`:''}${orderTag(i)}${etaTag(i)}</div>
+ <div class="acts">${i.url?`<a class="btn ghost sm" href="${esc(i.url)}" target="_blank" rel="noopener noreferrer">Open ↗</a>`:''}${nx?`<button class="btn sm" data-act="adv" data-id="${i.id}" data-to="${nx[0]}">${nx[1]}</button>`:''}<button class="btn ghost sm" data-act="who" data-id="${i.id}" title="Tap to switch who gets it">${i.who?esc(i.who)+' ⇄':'Dad or Mom?'}</button></div></div></div>`}
 function kidChips(){const c=(v,l,col)=>`<button class="chip ${U.kid===v?'on':''}" data-act="kid" data-v="${v}">${col?`<span class="dot" style="--kc:${esc(col)}"></span>`:''}${l}</button>`;return `<div class="chips" style="margin-top:12px">${c('all','Everyone')}${S.kids.map(k=>c(k.id,esc(k.name),k.color)).join('')}</div>`}
 function vLists(){const st=S.settings,kids=S.kids.filter(k=>U.kid==='all'||k.id===U.kid);
  const fl={all:()=>true,todo:i=>i.status==='idea',ordered:i=>i.status!=='idea'&&i.status!=='wrapped',wrapped:i=>i.status==='wrapped'};
@@ -292,10 +295,13 @@ function vLists(){const st=S.settings,kids=S.kids.filter(k=>U.kid==='all'||k.id=
  `<div class="chips" style="margin-top:10px">${[['all','All'],['todo','To order'],['ordered','Ordered'],['wrapped','Wrapped']].map(([v,l])=>`<button class="chip ${U.f===v?'on':''}" data-act="f" data-v="${v}">${l}</button>`).join('')}</div>`;
  kids.forEach(k=>{const lid=selList(k.id),ls=listsOf(k.id),t=totals(k,lid),b=+k.budget,its=S.items.filter(i=>i.kid===k.id&&inList(i,lid)&&fl[U.f](i)).sort((a,c)=>(a.status==='idea'&&c.status==='idea')?sugg(a).d-sugg(c).d:0);
   h+=`<section class="card" style="--kc:${esc(k.color)}"><div class="kidhead"><div><h2>${esc(k.name)}</h2><div class="muted sm">${ls.length?esc(listName(lid))+' · ':''}${plural(t.n,'gift')} · ${t.no} ordered</div></div><div class="tot"><b>${money(t.all)}</b><small>${money(t.ord)} ordered${b?' · budget '+money(b):''}</small></div></div>
-  ${listChips(k,lid,ls)}
+  ${listChips(k,lid,ls)}${whoLine(k,lid)}
   ${b?`<div class="bud ${t.all>b?'over':''}"><i style="width:${Math.min(100,t.all/b*100)}%"></i></div>`:''}
   ${its.map(card).join('')||`<div class="empty">${t.n?'Nothing here with this filter.':`Nothing on ${esc(k.name)}’s list yet.<br><button class="btn sm" style="margin-top:10px" data-tab="find">Find gifts & ideas</button>`}</div>`}${lid?`<div class="lacts"><button class="btn ghost sm" data-act="lren" data-k="${k.id}">Rename list</button><button class="btn danger sm" data-act="ldel" data-k="${k.id}">Delete this list</button></div>`:t.n?`<div class="lacts"><button class="btn ghost sm" data-act="lclr" data-k="${k.id}">Clear ${MAIN}</button></div>`:''}</section>`});
  return h}
+function whoLine(k,lid){const its=S.items.filter(i=>i.kid===k.id&&inList(i,lid));if(!its.some(i=>i.who))return '';const m=new Map();its.forEach(i=>{const w=i.who||'Not set';m.set(w,(m.get(w)||0)+(+i.price||0))});
+ const order=[...m.keys()].sort((a,b)=>(a==='Not set')-(b==='Not set')||a.localeCompare(b));return `<div class="split">${order.map(w=>`<span><b>${money(m.get(w))}</b> ${esc(w)}</span>`).join('')}</div>`}
+const WHO=()=>{const x=['Dad','Mom'];S.items.forEach(i=>{if(i.who&&!x.includes(i.who))x.push(i.who)});return x};
 function listChips(k,lid,ls){const mainN=S.items.filter(i=>i.kid===k.id&&!i.list).length;
  const c=(v,l)=>{const t=totals(k,v);return `<button class="chip ${lid===v?'on':''}" data-act="lsel" data-k="${k.id}" data-v="${v}">${esc(l)} <small>${money(t.all)}</small></button>`};
  return `<div class="chips lchips">${(!ls.length||mainN||!lid)?c('',MAIN):''}${ls.map(l=>c(l.id,l.name)).join('')}<button class="chip add" data-act="lnew" data-k="${k.id}">+ New list</button></div>`}
@@ -371,6 +377,7 @@ function drawEditor(){const i=E,body=$('#sheet .sbody'),sc=body?body.scrollTop:0
  ${listsOf(i.kid).length?`<div class="lab">List</div>${seg('list',[['',MAIN]].concat(listsOf(i.kid).map(l=>[l.id,esc(l.name)])),i.list||'')}`:''}
  <div class="grid2"><label>Price<input name="price" type="number" inputmode="decimal" step="0.01" value="${esc(i.price)}" placeholder="0"></label><label>Store<input name="store" value="${esc(i.store)}"></label></div>
  <div class="lab">Type</div>${seg('type',Object.entries(TYPES).map(([v,o])=>[v,o.l]),i.type)}
+ <div class="lab">Who gets it</div>${seg('who',[['','Not set']].concat(WHO().map(w=>[w,esc(w)])),i.who||'')}
  <div class="lab">Status</div>${seg('status',Object.entries(STATUS),i.status)}
  ${i.status==='idea'?`<label>Order on<input name="orderOn" type="date" value="${esc(i.orderOn)}"></label>${g.set?(i.saleNote?`<div class="hint"><span>${esc(i.saleNote)}</span></div>`:''):`<div class="hint"><span>Suggested <b>${fdW(g.d)}</b> — ${esc(g.why)}</span><button class="btn sm" data-act="useSugg">Use</button></div>`}`:''}
  ${i.status==='ordered'?`<label>Arrives<input name="eta" type="date" value="${esc(i.eta)}"></label>${i.eta&&pd(i.eta)>arrive()?`<p class="warn sm">That’s after ${fdD(arrive())} — consider a backup plan.</p>`:''}`:''}
@@ -405,6 +412,9 @@ document.addEventListener('click',async e=>{if(!unlocked)return;const el=e.targe
  const a=el.dataset.act,id=el.dataset.id,it=id?S.items.find(x=>x.id===id):null,idea=id?S.ideas.find(x=>x.id===id):null;
  switch(a){
  case 'edit':openEditor(id);break;
+ case 'who':{const w=WHO(),n=w.indexOf(it.who);it.who=n<0?w[0]:(n+1<w.length?w[n+1]:'');save();render()}break;
+ case 'zoom':{const src=it&&imgOf(it);if(!src){openEditor(id);break}
+  modal(`<img class="zoom" src="${esc(src)}" alt="" referrerpolicy="no-referrer" onerror="this.outerHTML='<p class=muted>The photo didn’t load. Open the store page to see it.</p>'"><p><b>${esc(it.name)}</b>${+it.price?' · '+money(it.price):''}${it.store?' · '+esc(it.store):''}</p><div class="row end">${it.url?`<a class="btn ghost sm" href="${esc(it.url)}" target="_blank" rel="noopener noreferrer">Open store page ↗</a>`:''}<button data-m="ok" class="btn sm">Close</button></div>`)}break;
  case 'new':openEditor();break;
  case 'close':closeSheet();break;
  case 'save':saveItem();break;
